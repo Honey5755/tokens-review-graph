@@ -130,9 +130,23 @@ class TestInstallHooks:
 
         data = json.loads((settings_dir / "settings.json").read_text())
         assert data["customSetting"] is True
+        assert "OtherHook" in data["hooks"]
         assert "PostToolUse" in data["hooks"]
         assert "SessionStart" in data["hooks"]
         assert "PreCommit" in data["hooks"]
+
+    def test_creates_settings_backup(self, tmp_path):
+        settings_dir = tmp_path / ".claude"
+        settings_dir.mkdir(parents=True)
+        existing = {"hooks": {"OtherHook": []}}
+        (settings_dir / "settings.json").write_text(json.dumps(existing))
+
+        install_hooks(tmp_path)
+
+        backup_path = settings_dir / "settings.json.bak"
+        assert backup_path.exists()
+        backup = json.loads(backup_path.read_text())
+        assert backup == existing
 
     def test_creates_claude_directory(self, tmp_path):
         install_hooks(tmp_path)

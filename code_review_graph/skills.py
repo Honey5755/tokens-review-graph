@@ -382,11 +382,30 @@ def install_hooks(repo_root: Path) -> None:
     if settings_path.exists():
         try:
             existing = json.loads(settings_path.read_text())
+            backup_path = settings_dir / "settings.json.bak"
+            shutil.copy2(settings_path, backup_path)
+            logger.info("Backed up existing settings to %s", backup_path)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Could not read existing %s: %s", settings_path, exc)
 
     hooks_config = generate_hooks_config()
-    existing.update(hooks_config)
+    existing_hooks = existing.get("hooks", {})
+    if not isinstance(existing_hooks, dict):
+        logger.warning("Existing hooks config is not a dict; replacing with defaults")
+        existing_hooks = {}
+
+    merged_hooks = dict(existing_hooks)
+    for hook_name, hook_entries in hooks_config.get("hooks", {}).items():
+        if isinstance(merged_hooks.get(hook_name), list):
+            merged_list = list(merged_hooks[hook_name])
+            for entry in hook_entries:
+                if entry not in merged_list:
+                    merged_list.append(entry)
+            merged_hooks[hook_name] = merged_list
+        else:
+            merged_hooks[hook_name] = hook_entries
+
+    existing["hooks"] = merged_hooks
 
     settings_path.write_text(json.dumps(existing, indent=2) + "\n")
     logger.info("Wrote hooks config: %s", settings_path)
