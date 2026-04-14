@@ -49,7 +49,7 @@ def find_hub_nodes(store: GraphStore, top_n: int = 10) -> list[dict]:
         })
 
     scored.sort(
-        key=lambda x: x.get("total_degree", 0),  # type: ignore[arg-type]
+        key=lambda x: x.get("total_degree", 0),  # type: ignore[arg-type,return-value]
         reverse=True,
     )
     return scored[:top_n]
@@ -106,7 +106,7 @@ def find_bridge_nodes(
         })
 
     results.sort(
-        key=lambda x: float(x.get("betweenness", 0)),  # type: ignore[arg-type]
+        key=lambda x: float(x.get("betweenness", 0)),  # type: ignore[arg-type,return-value]
         reverse=True,
     )
     return results[:top_n]
@@ -184,7 +184,7 @@ def find_knowledge_gaps(store: GraphStore) -> dict[str, list[dict]]:
                 "degree": d,
             })
     untested_hotspots.sort(
-        key=lambda x: x.get("degree", 0),  # type: ignore[arg-type]
+        key=lambda x: x.get("degree", 0),  # type: ignore[arg-type,return-value]
         reverse=True,
     )
 
@@ -308,7 +308,7 @@ def find_surprising_connections(
             })
 
     scored_edges.sort(
-        key=lambda x: float(x.get("surprise_score", 0)),  # type: ignore[arg-type]
+        key=lambda x: float(x.get("surprise_score", 0)),  # type: ignore[arg-type,return-value]
         reverse=True,
     )
     return scored_edges[:top_n]
