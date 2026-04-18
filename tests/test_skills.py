@@ -16,6 +16,7 @@ else:  # pragma: no cover - Python 3.10 backport
 from code_review_graph.skills import (
     _CLAUDE_MD_SECTION_MARKER,
     PLATFORMS,
+    _build_server_entry,
     _detect_serve_command,
     _in_poetry_project,
     _in_uv_project,
@@ -100,11 +101,11 @@ class TestGenerateSkills:
 
 class TestGenerateHooksConfig:
     def test_returns_dict_with_hooks(self):
-        config = generate_hooks_config()
+        config = generate_hooks_config(Path("/repo"))
         assert "hooks" in config
 
     def test_has_post_tool_use(self):
-        config = generate_hooks_config()
+        config = generate_hooks_config(Path("/repo"))
         assert "PostToolUse" in config["hooks"]
         entry = config["hooks"]["PostToolUse"][0]
         assert entry["matcher"] == "Edit|Write|Bash"
@@ -114,7 +115,7 @@ class TestGenerateHooksConfig:
         assert 0 < inner["timeout"] <= 600
 
     def test_has_session_start(self):
-        config = generate_hooks_config()
+        config = generate_hooks_config(Path("/repo"))
         assert "SessionStart" in config["hooks"]
         entry = config["hooks"]["SessionStart"][0]
         assert "matcher" in entry
@@ -123,16 +124,33 @@ class TestGenerateHooksConfig:
         assert "status" in inner["command"]
         assert 0 < inner["timeout"] <= 600
 
-    def test_no_pre_commit(self):
-        config = generate_hooks_config()
+    def test_does_not_emit_invalid_pre_commit_hook(self):
+        config = generate_hooks_config(Path("/repo"))
         assert "PreCommit" not in config["hooks"]
 
+    def test_has_only_valid_hook_types(self):
+        config = generate_hooks_config(Path("/repo"))
+        hook_types = set(config["hooks"].keys())
+        assert hook_types == {"PostToolUse", "SessionStart"}
+
     def test_hook_entries_use_nested_hooks_array(self):
-        config = generate_hooks_config()
+        config = generate_hooks_config(Path("/repo"))
         for hook_type, entries in config["hooks"].items():
             for entry in entries:
                 assert "hooks" in entry, f"{hook_type} entry missing 'hooks' array"
                 assert "command" not in entry, f"{hook_type} has bare 'command' outside hooks[]"
+
+    def test_repo_root_embedded_in_commands(self):
+        config = generate_hooks_config(Path("/my/project"))
+        post_cmd = config["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+        session_cmd = config["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        assert "/my/project" in post_cmd
+        assert "/my/project" in session_cmd
+
+    def test_quotes_repo_paths_with_spaces(self):
+        config = generate_hooks_config(Path("/repo with spaces"))
+        post_cmd = config["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+        assert '"' in post_cmd  # path is JSON-encoded so spaces are quoted
 
     def test_entries_use_claude_code_hook_schema(self):
         """Regression guard for the Claude Code hook schema.
@@ -143,7 +161,7 @@ class TestGenerateHooksConfig:
         array — missing that wrapper causes the entire settings.json to
         fail to parse ("Expected array, but received undefined").
         """
-        config = generate_hooks_config()
+        config = generate_hooks_config(Path("/repo"))
         for event_name, entries in config["hooks"].items():
             for entry in entries:
                 assert "command" not in entry, (

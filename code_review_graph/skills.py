@@ -492,13 +492,14 @@ def generate_skills(repo_root: Path, skills_dir: Path | None = None) -> Path:
     return skills_dir
 
 
-def generate_hooks_config() -> dict[str, Any]:
-    """Return Claude Code hook definitions for .claude/settings.json.
+def generate_hooks_config(repo_root: Path) -> dict[str, Any]:
+    """Generate Claude Code hooks configuration.
 
     Hooks use the v1.x+ schema: each entry needs a ``matcher`` and a nested
     ``hooks`` array. Timeouts are in seconds. ``PreCommit`` is not a valid
     Claude Code event — pre-commit checks are handled by ``install_git_hook``.
     """
+    repo_arg = json.dumps(repo_root.resolve().as_posix())
     return {
         "hooks": {
             "PostToolUse": [
@@ -509,7 +510,8 @@ def generate_hooks_config() -> dict[str, Any]:
                             "type": "command",
                             "command": (
                                 "git rev-parse --git-dir >/dev/null 2>&1"
-                                " && code-review-graph update --skip-flows"
+                                f" && code-review-graph update --skip-flows"
+                                f" --repo {repo_arg}"
                                 " || true"
                             ),
                             "timeout": 30,
@@ -525,7 +527,7 @@ def generate_hooks_config() -> dict[str, Any]:
                             "type": "command",
                             "command": (
                                 "git rev-parse --git-dir >/dev/null 2>&1"
-                                " && code-review-graph status"
+                                f" && code-review-graph status --repo {repo_arg}"
                                 " || echo 'Not a git repo, skipping'"
                             ),
                             "timeout": 10,
@@ -600,7 +602,7 @@ def install_hooks(repo_root: Path) -> None:
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Could not read existing %s: %s", settings_path, exc)
 
-    hooks_config = generate_hooks_config()
+    hooks_config = generate_hooks_config(repo_root)
     existing_hooks = existing.get("hooks", {})
     if not isinstance(existing_hooks, dict):
         logger.warning("Existing hooks config is not a dict; replacing with defaults")
