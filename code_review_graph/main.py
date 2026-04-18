@@ -29,12 +29,17 @@ from .tools import (
     generate_wiki_func,
     get_affected_flows_func,
     get_architecture_overview_func,
+    get_bridge_nodes_func,
     get_community_func,
     get_docs_section,
     get_flow,
+    get_hub_nodes_func,
     get_impact_radius,
+    get_knowledge_gaps_func,
     get_minimal_context,
     get_review_context,
+    get_suggested_questions_func,
+    get_surprising_connections_func,
     get_wiki_page_func,
     list_communities_func,
     list_flows,
@@ -44,6 +49,7 @@ from .tools import (
     refactor_func,
     run_postprocess,
     semantic_search_nodes,
+    traverse_graph_func,
 )
 
 # NOTE: Thread-safe for stdio MCP (single-threaded). If adding HTTP/SSE
@@ -267,12 +273,16 @@ def semantic_search_nodes_tool(
     limit: int = 20,
     repo_root: Optional[str] = None,
     model: Optional[str] = None,
+    provider: Optional[str] = None,
     detail_level: str = "standard",
 ) -> dict:
     """Search for code entities by name, keyword, or semantic similarity.
 
     Uses vector embeddings for semantic search when available (run embed_graph_tool
-    first, requires sentence-transformers). Falls back to keyword matching otherwise.
+    first, with a provider of your choice: "local" needs sentence-transformers,
+    "openai" / "google" / "minimax" need their respective env vars). Falls back
+    to FTS5 / keyword matching when no matching embeddings exist for the given
+    provider.
 
     Args:
         query: Search string to match against node names.
@@ -280,13 +290,15 @@ def semantic_search_nodes_tool(
         limit: Maximum results. Default: 20.
         repo_root: Repository root path. Auto-detected if omitted.
         model: Embedding model for query vectors. Must match the model used
-               during embed_graph. Falls back to CRG_EMBEDDING_MODEL env var,
-               then all-MiniLM-L6-v2.
+               during embed_graph. Falls back to CRG_EMBEDDING_MODEL env var
+               (local) or CRG_OPENAI_MODEL (openai).
+        provider: Embedding provider: "local" (default), "openai", "google",
+                  or "minimax". Must match the provider used during embed_graph.
         detail_level: "standard" for full output, "minimal" for compact summary. Default: standard.
     """
     return semantic_search_nodes(
-        query=query, kind=kind, limit=limit, repo_root=_resolve_repo_root(repo_root), model=model,
-        detail_level=detail_level,
+        query=query, kind=kind, limit=limit, repo_root=_resolve_repo_root(repo_root),
+        model=model, provider=provider, detail_level=detail_level,
     )
 
 
@@ -294,31 +306,41 @@ def semantic_search_nodes_tool(
 async def embed_graph_tool(
     repo_root: Optional[str] = None,
     model: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> dict:
     """Compute vector embeddings for all graph nodes to enable semantic search.
 
-    Requires: pip install code-review-graph[embeddings]
-    Default model: all-MiniLM-L6-v2. Override via `model` param or
-    CRG_EMBEDDING_MODEL env var (any sentence-transformers compatible model).
-    Changing the model re-embeds all nodes automatically.
+    Requires: pip install code-review-graph[embeddings] (local provider only;
+    cloud providers use stdlib urllib).
+    Default provider: local. Default model: all-MiniLM-L6-v2.
+    Override provider via `provider` param, model via `model` param or
+    CRG_EMBEDDING_MODEL / CRG_OPENAI_MODEL env vars.
+    Changing the model or provider re-embeds all nodes automatically.
 
     After running this, semantic_search_nodes_tool will use vector similarity
     instead of keyword matching for much better results.
 
-    Runs the blocking sentence-transformers / Gemini inference in a
+    Runs the blocking sentence-transformers / Gemini / HTTP inference in a
     thread via ``asyncio.to_thread`` so the stdio event loop stays
     responsive — without this wrapper, embedding a large graph would
     silently hang the MCP server on Windows. See: #46, #136.
 
     Args:
         repo_root: Repository root path. Auto-detected if omitted.
-        model: Embedding model name (HuggingFace ID or local path).
-               Falls back to CRG_EMBEDDING_MODEL env var, then all-MiniLM-L6-v2.
+        model: Embedding model. For local: HuggingFace ID/path; for openai:
+               model ID (e.g. "text-embedding-3-small"); for google: Gemini
+               model ID. Falls back to CRG_EMBEDDING_MODEL / CRG_OPENAI_MODEL
+               env vars as appropriate.
+        provider: "local" (default), "openai", "google", or "minimax".
+                  "openai" requires CRG_OPENAI_BASE_URL + CRG_OPENAI_API_KEY +
+                  CRG_OPENAI_MODEL env vars and accepts any OpenAI-compatible
+                  endpoint (real OpenAI, Azure, new-api, LiteLLM, vLLM, etc.).
     """
     return await asyncio.to_thread(
         embed_graph,
         repo_root=_resolve_repo_root(repo_root),
         model=model,
+        provider=provider,
     )
 
 
@@ -675,6 +697,131 @@ def get_wiki_page_tool(
 
 
 @mcp.tool()
+def get_hub_nodes_tool(
+    top_n: int = 10,
+    repo_root: Optional[str] = None,
+) -> dict:
+    """Find the most connected nodes in the codebase (architectural hotspots).
+
+    Hub nodes have the highest total degree (in + out edges). Changes to
+    them have disproportionate blast radius. Excludes File nodes.
+
+    Args:
+        top_n: Number of top hubs to return. Default: 10.
+        repo_root: Repository root path. Auto-detected if omitted.
+    """
+    return get_hub_nodes_func(
+        repo_root=_resolve_repo_root(repo_root), top_n=top_n,
+    )
+
+
+@mcp.tool()
+def get_bridge_nodes_tool(
+    top_n: int = 10,
+    repo_root: Optional[str] = None,
+) -> dict:
+    """Find architectural chokepoints via betweenness centrality.
+
+    Bridge nodes sit on shortest paths between many node pairs.
+    If they break, multiple code regions lose connectivity.
+    Uses sampling approximation for graphs > 5000 nodes.
+
+    Args:
+        top_n: Number of top bridges to return. Default: 10.
+        repo_root: Repository root path. Auto-detected if omitted.
+    """
+    return get_bridge_nodes_func(
+        repo_root=_resolve_repo_root(repo_root), top_n=top_n,
+    )
+
+
+@mcp.tool()
+def get_knowledge_gaps_tool(
+    repo_root: Optional[str] = None,
+) -> dict:
+    """Identify structural weaknesses in the codebase graph.
+
+    Finds isolated nodes (disconnected), thin communities (< 3 members),
+    untested hotspots (high-degree nodes without test coverage), and
+    single-file communities.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+    """
+    return get_knowledge_gaps_func(
+        repo_root=_resolve_repo_root(repo_root),
+    )
+
+
+@mcp.tool()
+def get_surprising_connections_tool(
+    top_n: int = 15,
+    repo_root: Optional[str] = None,
+) -> dict:
+    """Find unexpected architectural coupling via composite surprise scoring.
+
+    Scores edges by: cross-community (+0.3), cross-language (+0.2),
+    peripheral-to-hub (+0.2), cross-test-boundary (+0.15), and
+    unusual edge kinds (+0.15).
+
+    Args:
+        top_n: Number of top surprises to return. Default: 15.
+        repo_root: Repository root path. Auto-detected if omitted.
+    """
+    return get_surprising_connections_func(
+        repo_root=_resolve_repo_root(repo_root), top_n=top_n,
+    )
+
+
+@mcp.tool()
+def get_suggested_questions_tool(
+    repo_root: Optional[str] = None,
+) -> dict:
+    """Auto-generate review questions from graph analysis.
+
+    Produces prioritized questions about: bridge nodes needing tests,
+    untested hub nodes, surprising cross-community coupling, thin
+    communities, and untested hotspots.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+    """
+    return get_suggested_questions_func(
+        repo_root=_resolve_repo_root(repo_root),
+    )
+
+
+@mcp.tool()
+def traverse_graph_tool(
+    query: str,
+    mode: str = "bfs",
+    depth: int = 3,
+    token_budget: int = 2000,
+    repo_root: Optional[str] = None,
+) -> dict:
+    """BFS/DFS traversal from best-matching node with token budget.
+
+    Free-form graph exploration: finds the node best matching your
+    query, then traverses outward via BFS or DFS up to the given
+    depth, collecting connected nodes within the token budget.
+
+    Args:
+        query: Search string to find the starting node.
+        mode: Traversal mode: "bfs" (breadth-first) or "dfs"
+            (depth-first). Default: bfs.
+        depth: Max traversal depth (1-6). Default: 3.
+        token_budget: Approximate token limit for results.
+            Default: 2000.
+        repo_root: Repository root path. Auto-detected if omitted.
+    """
+    return traverse_graph_func(
+        query=query, mode=mode, depth=depth,
+        token_budget=token_budget,
+        repo_root=_resolve_repo_root(repo_root) or "",
+    )
+
+
+@mcp.tool()
 def list_repos_tool() -> dict:
     """List all registered repositories in the multi-repo registry.
 
@@ -773,7 +920,9 @@ def main(repo_root: str | None = None) -> None:
     if sys.platform == "win32":
         import asyncio
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    mcp.run(transport="stdio")
+    # Stdio MCP must keep stdout strictly JSON-RPC. FastMCP's banner/update
+    # notices corrupt the handshake stream on clients like Codex CLI.
+    mcp.run(transport="stdio", show_banner=False)
 
 
 if __name__ == "__main__":
