@@ -108,6 +108,7 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".sh": "bash",
     ".bash": "bash",
     ".zsh": "bash",
+    ".ksh": "bash",  # Korn shell — close enough to bash for tree-sitter-bash (#235)
     ".ex": "elixir",
     ".exs": "elixir",
     ".ipynb": "notebook",
@@ -123,6 +124,7 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
     # extraction is regex-based (see _parse_rescript).
     ".res": "rescript",
     ".resi": "rescript",
+    ".gd": "gdscript",
 }
 
 # Tree-sitter node type mappings per language
