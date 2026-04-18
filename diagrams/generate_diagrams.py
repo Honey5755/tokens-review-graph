@@ -597,6 +597,7 @@ def d8():
         ("Antigravity",  "~/.gemini/antigravity/mcp_config.json",GRY, GRY_BG),
         ("Qwen Code",    "~/.qwen/settings.json",                BLU, PRP_BG),  # blue-purple
         ("Qoder",        ".qoder/mcp.json",                      GRN, ORG_BG),  # green-orange
+        ("Kiro",         ".kiro/settings/mcp.json",              BLU, BLU_BG),
     ]
 
     # Central "install" node
