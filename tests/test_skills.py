@@ -255,6 +255,27 @@ class TestInstallHooks:
         install_hooks(tmp_path)
         assert (tmp_path / ".claude").is_dir()
 
+    def test_install_qoder_hooks(self, tmp_path):
+        install_hooks(tmp_path, platform="qoder")
+        settings_path = tmp_path / ".qoder" / "settings.json"
+        assert settings_path.exists()
+        data = json.loads(settings_path.read_text())
+        assert "hooks" in data
+        assert "PostToolUse" in data["hooks"]
+        assert "SessionStart" in data["hooks"]
+
+    def test_install_qoder_hooks_merges_existing(self, tmp_path):
+        settings_dir = tmp_path / ".qoder"
+        settings_dir.mkdir(parents=True)
+        existing = {"customSetting": True}
+        (settings_dir / "settings.json").write_text(json.dumps(existing))
+
+        install_hooks(tmp_path, platform="qoder")
+
+        data = json.loads((settings_dir / "settings.json").read_text())
+        assert data["customSetting"] is True
+        assert "hooks" in data
+
 
 class TestInjectClaudeMd:
     def test_creates_section_in_new_file(self, tmp_path):
@@ -302,11 +323,11 @@ class TestInjectClaudeMd:
 class TestInjectPlatformInstructionsFiltering:
     def test_all_writes_every_file(self, tmp_path):
         updated = inject_platform_instructions(tmp_path, target="all")
-        assert set(updated) == {"AGENTS.md", "GEMINI.md", ".cursorrules", ".windsurfrules", ".kiro/steering/code-review-graph.md"}
+        assert set(updated) == {"AGENTS.md", "GEMINI.md", ".cursorrules", ".windsurfrules", "QODER.md", ".kiro/steering/code-review-graph.md"}
 
     def test_default_is_all(self, tmp_path):
         updated = inject_platform_instructions(tmp_path)
-        assert set(updated) == {"AGENTS.md", "GEMINI.md", ".cursorrules", ".windsurfrules", ".kiro/steering/code-review-graph.md"}
+        assert set(updated) == {"AGENTS.md", "GEMINI.md", ".cursorrules", ".windsurfrules", "QODER.md", ".kiro/steering/code-review-graph.md"}
 
     def test_claude_writes_nothing(self, tmp_path):
         updated = inject_platform_instructions(tmp_path, target="claude")
@@ -315,12 +336,14 @@ class TestInjectPlatformInstructionsFiltering:
         assert not (tmp_path / "GEMINI.md").exists()
         assert not (tmp_path / ".cursorrules").exists()
         assert not (tmp_path / ".windsurfrules").exists()
+        assert not (tmp_path / "QODER.md").exists()
 
     def test_cursor_writes_only_cursor_files(self, tmp_path):
         updated = inject_platform_instructions(tmp_path, target="cursor")
         assert set(updated) == {"AGENTS.md", ".cursorrules"}
         assert not (tmp_path / "GEMINI.md").exists()
         assert not (tmp_path / ".windsurfrules").exists()
+        assert not (tmp_path / "QODER.md").exists()
 
     def test_windsurf_writes_only_windsurfrules(self, tmp_path):
         updated = inject_platform_instructions(tmp_path, target="windsurf")
@@ -333,6 +356,14 @@ class TestInjectPlatformInstructionsFiltering:
     def test_opencode_writes_only_agents(self, tmp_path):
         updated = inject_platform_instructions(tmp_path, target="opencode")
         assert updated == ["AGENTS.md"]
+
+    def test_qoder_writes_only_qoder_md(self, tmp_path):
+        updated = inject_platform_instructions(tmp_path, target="qoder")
+        assert updated == ["QODER.md"]
+        assert not (tmp_path / "AGENTS.md").exists()
+        assert not (tmp_path / "GEMINI.md").exists()
+        assert not (tmp_path / ".cursorrules").exists()
+        assert not (tmp_path / ".windsurfrules").exists()
 
 
 class TestInstallPlatformConfigs:
@@ -606,6 +637,28 @@ class TestInstallPlatformConfigs:
             install_platform_configs(tmp_path, target="continue")
         data = json.loads(config_path.read_text())
         assert len(data["mcpServers"]) == 1
+
+    def test_install_qoder_config(self, tmp_path):
+        qoder_config = tmp_path / ".qoder" / "mcp.json"
+        with patch.dict(
+            PLATFORMS,
+            {
+                "qoder": {
+                    **PLATFORMS["qoder"],
+                    "config_path": lambda root: qoder_config,
+                    "detect": lambda: True,
+                },
+            },
+        ):
+            configured = install_platform_configs(tmp_path, target="qoder")
+        assert "Qoder" in configured
+        data = json.loads(qoder_config.read_text())
+        assert "mcpServers" in data
+        assert "code-review-graph" in data["mcpServers"]
+        assert data["mcpServers"]["code-review-graph"]["type"] == "stdio"
+        import shutil
+        expected_cmd = "uvx" if shutil.which("uvx") else "code-review-graph"
+        assert data["mcpServers"]["code-review-graph"]["command"] == expected_cmd
 
 
 class TestKiroPlatform:

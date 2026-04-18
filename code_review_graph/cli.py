@@ -42,6 +42,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Shared platform choices for install and init commands
+_PLATFORM_CHOICES = [
+    "codex", "claude", "claude-code", "cursor", "windsurf", "zed",
+    "continue", "opencode", "antigravity", "qwen", "kiro", "qoder", "all",
+]
+
 
 def _get_version() -> str:
     """Get the installed package version."""
@@ -216,6 +222,7 @@ def _handle_init(args: argparse.Namespace) -> None:
         inject_platform_instructions,
         install_git_hook,
         install_hooks,
+        install_qoder_skills,
     )
 
     if not skip_skills:
@@ -242,9 +249,17 @@ def _handle_init(args: argparse.Namespace) -> None:
     elif skip_instructions:
         print("Skipped instruction injection (--no-instructions).")
 
-    if not skip_hooks and target in ("claude", "all"):
-        install_hooks(repo_root)
-        print(f"Installed hooks in {repo_root / '.claude' / 'settings.json'}")
+
+    # Install Qoder skills (global user-level skills directory)
+    if not skip_skills and target in ("qoder", "all"):
+        qoder_skills_dir = install_qoder_skills(repo_root)
+        if qoder_skills_dir:
+            print(f"Installed Qoder skills to {qoder_skills_dir}")
+    if not skip_hooks and target in ("claude", "qoder", "all"):
+        platforms_to_install = [target] if target != "all" else ["claude", "qoder"]
+        for plat in platforms_to_install:
+            install_hooks(repo_root, platform=plat)
+            print(f"Installed hooks in {repo_root / f'.{plat}' / 'settings.json'}")
         git_hook = install_git_hook(repo_root)
         if git_hook:
             print(f"Installed git pre-commit hook in {git_hook}")
@@ -316,20 +331,7 @@ def main() -> None:
     )
     install_cmd.add_argument(
         "--platform",
-        choices=[
-            "codex",
-            "claude",
-            "claude-code",
-            "cursor",
-            "windsurf",
-            "zed",
-            "continue",
-            "opencode",
-            "antigravity",
-            "qwen",
-            "kiro",
-            "all",
-        ],
+        choices=_PLATFORM_CHOICES,
         default="all",
         help="Target platform for MCP config (default: all detected)",
     )
@@ -367,20 +369,7 @@ def main() -> None:
     init_cmd.add_argument("--all", action="store_true", dest="install_all", help=argparse.SUPPRESS)
     init_cmd.add_argument(
         "--platform",
-        choices=[
-            "codex",
-            "claude",
-            "claude-code",
-            "cursor",
-            "windsurf",
-            "zed",
-            "continue",
-            "opencode",
-            "antigravity",
-            "qwen",
-            "kiro",
-            "all",
-        ],
+        choices=_PLATFORM_CHOICES,
         default="all",
         help="Target platform for MCP config (default: all detected)",
     )

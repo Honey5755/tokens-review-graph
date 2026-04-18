@@ -110,6 +110,14 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "format": "object",
         "needs_type": True,
     },
+    "qoder": {
+        "name": "Qoder",
+        "config_path": lambda root: root / ".qoder" / "mcp.json",
+        "key": "mcpServers",
+        "detect": lambda: True,
+        "format": "object",
+        "needs_type": True,
+    },
 }
 
 
@@ -578,8 +586,8 @@ fi
     return hook_path
 
 
-def install_hooks(repo_root: Path) -> None:
-    """Write hooks config to .claude/settings.json.
+def install_hooks(repo_root: Path, platform: str = "claude") -> None:
+    """Write hooks config to platform-specific settings.json.
 
     Merges new hook entries into existing settings, preserving both
     non-hook configuration and user-defined hooks.  A backup of the
@@ -587,8 +595,12 @@ def install_hooks(repo_root: Path) -> None:
 
     Args:
         repo_root: Repository root directory.
+        platform: Target platform ("claude" or "qoder").
     """
-    settings_dir = repo_root / ".claude"
+    if platform == "qoder":
+        settings_dir = repo_root / ".qoder"
+    else:
+        settings_dir = repo_root / ".claude"
     settings_dir.mkdir(parents=True, exist_ok=True)
     settings_path = settings_dir / "settings.json"
 
@@ -709,6 +721,7 @@ _PLATFORM_INSTRUCTION_FILES: dict[str, tuple[str, ...]] = {
     "GEMINI.md": ("antigravity",),
     ".cursorrules": ("cursor",),
     ".windsurfrules": ("windsurf",),
+    "QODER.md": ("qoder",),
     ".kiro/steering/code-review-graph.md": ("kiro",),
 }
 
@@ -734,3 +747,43 @@ def inject_platform_instructions(repo_root: Path, target: str = "all") -> list[s
         if _inject_instructions(path, _CLAUDE_MD_SECTION_MARKER, _CLAUDE_MD_SECTION):
             updated.append(filename)
     return updated
+
+
+def install_qoder_skills(repo_root: Path) -> Path | None:
+    """Install skills to Qoder's project-level skills directory.
+
+    Qoder expects skills in .qoder/skills/{skillName}/SKILL.md format within the project.
+    This function copies the project's skills/ directory contents to that location.
+
+    Args:
+        repo_root: Repository root directory (where the skills/ folder is located).
+
+    Returns:
+        Path to the Qoder skills directory, or None if installation failed.
+    """
+    # Qoder skills directory (project-level)
+    qoder_skills_dir = repo_root / ".qoder" / "skills"
+    qoder_skills_dir.mkdir(parents=True, exist_ok=True)
+
+    # Source skills directory in the project
+    source_skills_dir = repo_root / "skills"
+    if not source_skills_dir.exists():
+        logger.warning("No skills/ directory found in %s", repo_root)
+        return None
+
+    installed_count = 0
+    for skill_dir in source_skills_dir.iterdir():
+        if skill_dir.is_dir():
+            skill_file = skill_dir / "SKILL.md"
+            if skill_file.exists():
+                target_dir = qoder_skills_dir / skill_dir.name
+                target_dir.mkdir(parents=True, exist_ok=True)
+                target_file = target_dir / "SKILL.md"
+                target_file.write_text(skill_file.read_text(encoding="utf-8"), encoding="utf-8")
+                logger.info("Installed Qoder skill: %s", skill_dir.name)
+                installed_count += 1
+
+    if installed_count > 0:
+        logger.info("Installed %d skill(s) to %s", installed_count, qoder_skills_dir)
+        return qoder_skills_dir
+    return None
