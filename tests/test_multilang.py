@@ -1227,7 +1227,12 @@ class TestJuliaParsing:
 
     def test_struct_inheritance(self):
         inherits = [e for e in self.edges if e.kind == "INHERITS"]
-        pairs = {(e.source.split("::")[-1], e.target) for e in inherits}
+        # Dog's qualified source is file::SampleModule.Dog; we only care
+        # about the trailing struct name and the target.
+        pairs = {
+            (e.source.split("::")[-1].split(".")[-1], e.target)
+            for e in inherits
+        }
         assert ("Dog", "AbstractAnimal") in pairs
 
     def test_finds_long_form_functions(self):
@@ -1285,10 +1290,12 @@ class TestJuliaParsing:
             and e.extra
             and e.extra.get("julia_export")
         ]
-        targets = {e.target for e in refs}
-        assert "greet" in targets
-        assert "Dog" in targets
-        assert "process" in targets
+        # Targets may be resolved to qualified names (file::SampleModule.greet)
+        # if the exported symbol is defined locally; otherwise they stay bare.
+        trailing = {e.target.split(".")[-1] for e in refs}
+        assert "greet" in trailing
+        assert "Dog" in trailing
+        assert "process" in trailing
 
     def test_finds_testsets(self):
         tests = [n for n in self.nodes if n.kind == "Test"]
@@ -1296,9 +1303,11 @@ class TestJuliaParsing:
 
     def test_nested_function_parent(self):
         contains = [e for e in self.edges if e.kind == "CONTAINS"]
-        # outer's CONTAINS edge should target inner
+        # The CONTAINS edge for inner should originate from outer, and
+        # its qualified target should carry `outer.inner` in the name.
         assert any(
-            "outer" in e.source and e.target.endswith("::inner")
+            e.source.endswith("outer")
+            and e.target.endswith("outer.inner")
             for e in contains
         )
 
