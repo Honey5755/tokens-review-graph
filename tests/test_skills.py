@@ -134,6 +134,33 @@ class TestGenerateHooksConfig:
                 assert "hooks" in entry, f"{hook_type} entry missing 'hooks' array"
                 assert "command" not in entry, f"{hook_type} has bare 'command' outside hooks[]"
 
+    def test_entries_use_claude_code_hook_schema(self):
+        """Regression guard for the Claude Code hook schema.
+
+        Claude Code rejects entries that put ``command`` directly on the
+        event entry. Each entry must wrap its command(s) in a
+        ``hooks: [{"type": "command", "command": ..., "timeout": ...}]``
+        array — missing that wrapper causes the entire settings.json to
+        fail to parse ("Expected array, but received undefined").
+        """
+        config = generate_hooks_config()
+        for event_name, entries in config["hooks"].items():
+            for entry in entries:
+                assert "command" not in entry, (
+                    f"{event_name} entry has a flat `command` field; "
+                    "it must be wrapped in an inner `hooks` array"
+                )
+                assert "hooks" in entry, (
+                    f"{event_name} entry is missing the inner `hooks` array"
+                )
+                assert isinstance(entry["hooks"], list)
+                for hook in entry["hooks"]:
+                    assert hook.get("type") == "command", (
+                        f"{event_name} inner hook missing type=\"command\""
+                    )
+                    assert "command" in hook
+                    assert "timeout" in hook
+
 
 class TestInstallGitHook:
     def _make_git_repo(self, tmp_path: Path) -> Path:
