@@ -39,22 +39,24 @@ def rebuild_fts_index(store: GraphStore) -> int:
     # so a crash mid-rebuild cannot leave the DB without an FTS table at all
     # (DROP succeeded but CREATE/INSERT didn't).  See #259.
     if conn.in_transaction:
-        conn.commit()
+        logger.warning("Rolling back uncommitted transaction before BEGIN IMMEDIATE")
+        conn.rollback()
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Drop and recreate the FTS table with content sync to match migration v5
         conn.execute("DROP TABLE IF EXISTS nodes_fts")
         conn.execute("""
             CREATE VIRTUAL TABLE nodes_fts USING fts5(
                 name, qualified_name, file_path, signature,
+                content='nodes', content_rowid='rowid',
                 tokenize='porter unicode61'
             )
         """)
-        # Populate from nodes table
-        conn.execute("""
-            INSERT INTO nodes_fts(rowid, name, qualified_name, file_path, signature)
-            SELECT id, name, qualified_name, file_path, COALESCE(signature, '')
-            FROM nodes
-        """)
+
+        # Rebuild from the content table (nodes) using the FTS5 rebuild command
+        conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')")
+
+
         conn.commit()
     except BaseException:
         conn.rollback()
