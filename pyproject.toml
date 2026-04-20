@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "code-review-graph"
+name = "tokens-review-graph"
 version = "2.3.2"
 description = "Persistent incremental knowledge graph for token-efficient, context-aware code reviews with Claude Code"
 readme = {file = "README.md", content-type = "text/markdown"}
@@ -44,7 +44,7 @@ Changelog = "https://github.com/tirth8205/code-review-graph/blob/main/CHANGELOG.
 Issues = "https://github.com/tirth8205/code-review-graph/issues"
 
 [project.scripts]
-code-review-graph = "code_review_graph.cli:main"
+tokens-review-graph = "code_review_graph.cli:main"
 
 [project.optional-dependencies]
 embeddings = [
@@ -65,11 +65,11 @@ wiki = [
     "ollama>=0.1.0",
 ]
 all = [
-    "code-review-graph[embeddings]",
-    "code-review-graph[communities]",
-    "code-review-graph[enrichment]",
-    "code-review-graph[eval]",
-    "code-review-graph[wiki]",
+    "tokens-review-graph[embeddings]",
+    "tokens-review-graph[communities]",
+    "tokens-review-graph[enrichment]",
+    "tokens-review-graph[eval]",
+    "tokens-review-graph[wiki]",
 ]
 enrichment = [
     "jedi>=0.19.2",
